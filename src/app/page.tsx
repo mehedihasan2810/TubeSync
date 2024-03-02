@@ -1,113 +1,318 @@
+"use client";
+
+import Navbar from "@/components/Navbar";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { QueryClient, useMutation, useQuery } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import Image from "next/image";
+import { useState } from "react";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
+
+const queryClient = new QueryClient();
 
 export default function Home() {
+  const [currentPlaylist, setCurrentPlaylist] = useState("");
+  const [loadedVideoCount, setLoadedVideoCount] = useState(10);
+  const [loadedPlaylistsCount, setLoadedPlaylistsCount] = useState(5);
+  const [selectedVideo, setSelectedVideo] = useState<any>({});
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const { toast } = useToast();
+
+  const { data: session, status } = useSession();
+
+  /**
+   * Fetch all the playlists data with access token and youtube api key
+   */
+  const {
+    isPending: isPlaylistsPending,
+    error: playlistsError,
+    data: playlists,
+  } = useQuery({
+    queryKey: ["playlists"],
+    queryFn: () =>
+      fetch(
+        `https://youtube.googleapis.com/youtube/v3/playlists?part=snippet&maxResults=5&mine=true&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
+        {
+          method: "GET",
+          headers: {
+            // @ts-ignore
+            Authorization: `Bearer ${session?.access_token}`,
+            Accept: "application/json",
+          },
+        }
+      ).then((res) => res.json()),
+    enabled: status === "authenticated",
+  });
+
+  /**
+   * Fetch all the videos of a selected playlist
+   */
+  const {
+    isPending: isVideosPending,
+    error: videosError,
+    data: videos,
+  } = useQuery({
+    queryKey: ["videos", currentPlaylist, loadedVideoCount],
+    queryFn: () =>
+      fetch(
+        `https://youtube.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=${loadedVideoCount}&playlistId=${
+          currentPlaylist || playlists.items[0].id
+        }&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`
+      ).then((res) => res.json()),
+    enabled: !!playlists,
+  });
+
+  /**
+   * Update youtube video content
+   */
+  const mutation = useMutation({
+    mutationFn: (newData: any) => {
+      return fetch(
+        `https://youtube.googleapis.com/youtube/v3/videos?part=snippet&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
+
+        {
+          method: "PUT",
+          headers: {
+            // @ts-ignore
+            Authorization: `Bearer ${session?.access_token}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(newData),
+        }
+      ).then((res) => res.json());
+    },
+  });
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <main className="max-w-6xl mx-auto px-4 mb-20">
+      <Navbar />
+
+      <section>
+        <div className="my-10 text-center">
+          <h1 className="font-bold text-4xl mb-2">Manage Youtube Channels</h1>
+          <p>Easily Manage your all youtube channels from one place</p>
         </div>
-      </div>
 
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+        <h2 className="font-bold text-2xl mb-2">Your Playlists:</h2>
+        <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {/* Map all the fetched playlists */}
+          {playlistsError || playlists?.error ? (
+            <li className="my-2">Something went wrong! Try again</li>
+          ) : isPlaylistsPending ? (
+            Array.from({ length: 5 }).map((_, index) => (
+              <li key={index}>
+                <Skeleton className="aspect-video" />
+              </li>
+            ))
+          ) : (
+            playlists.items.map((playlist: any) => (
+              <li key={playlist.id}>
+                <Card className="overflow-hidden">
+                  <Image
+                    className="aspect-video w-full h-full object-cover"
+                    src={playlist.snippet.thumbnails.medium?.url}
+                    width={180}
+                    height={320}
+                    alt={playlist.snippet.title}
+                  />
+                  <div className="flex gap-2 justify-between p-2 items-center">
+                    <p
+                      title={playlist.snippet.title}
+                      className="font-semibold truncate"
+                    >
+                      {playlist.snippet.title}
+                    </p>
+                    <Button onClick={() => setCurrentPlaylist(playlist.id)}>
+                      View full playlist
+                    </Button>
+                  </div>
+                </Card>
+              </li>
+            ))
+          )}
+        </ul>
 
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+        {playlistsError || playlists?.error ? null : (
+          <Button
+            disabled={
+              isPlaylistsPending ||
+              playlists.items.length < loadedPlaylistsCount
+            }
+            onClick={() => setLoadedPlaylistsCount((c) => (c += 5))}
+            variant="secondary"
+            className="mt-4 font-semibold"
+          >
+            Load 5 more playlists
+          </Button>
+        )}
+      </section>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+      <section className="mt-10">
+        <h2 className="font-bold text-2xl mb-2">
+          Videos of {}
+          <span className="italic">
+            {!playlists || playlistsError || playlists?.error
+              ? "..."
+              : currentPlaylist
+              ? playlists.items.find((p: any) => p.id === currentPlaylist)
+                  .snippet.title
+              : playlists.items[0].snippet.title}
+          </span>
+          &nbsp; playlist:
+        </h2>
+        <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {/* Map all the videos of the selected playlist */}
+          {videosError || videos?.error || playlists?.error ? (
+            <li className="my-2">Something went wrong! Try again</li>
+          ) : isVideosPending ? (
+            Array.from({ length: 5 }).map((_, index) => (
+              <li key={index}>
+                <Skeleton className="aspect-video" />
+              </li>
+            ))
+          ) : (
+            videos.items.map((video: any) => (
+              <li key={video.id}>
+                <Card className="overflow-hidden">
+                  <iframe
+                    className="w-full aspect-video"
+                    src={`https://www.youtube.com/embed/${video.snippet.resourceId.videoId}`}
+                  ></iframe>
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button
+                        onClick={async () => {
+                          try {
+                            /**
+                             * Fetch the video we are going to edit
+                             */
+                            const data = await queryClient.fetchQuery({
+                              queryKey: ["video"],
+                              queryFn: () =>
+                                fetch(
+                                  `https://youtube.googleapis.com/youtube/v3/videos?part=snippet&id=${video.snippet.resourceId.videoId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
+                                  {
+                                    method: "GET",
+                                    headers: {
+                                      // @ts-ignore
+                                      Authorization: `Bearer ${session?.access_token}`,
+                                      Accept: "application/json",
+                                    },
+                                  }
+                                ).then((res) => res.json()),
+                            });
+                            setTitle(data.items[0].snippet.title);
+                            setDesc(data.items[0].snippet.description);
+                            setSelectedVideo(data.items[0]);
+                          } catch (error) {
+                            console.log(error);
+                          }
+                        }}
+                        className="m-3"
+                      >
+                        Edit
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[425px]">
+                      <DialogHeader>
+                        <DialogTitle>Edit Video</DialogTitle>
+                        <DialogDescription>
+                          Edit your youtube video.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor="title">Title</Label>
+                          <Input
+                            onChange={(e) => setTitle(e.target.value)}
+                            value={title}
+                            id="title"
+                            placeholder="Edit Title..."
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor="desc">Description</Label>
+                          <Textarea
+                            onChange={(e) => setDesc(e.target.value)}
+                            value={desc}
+                            placeholder="Edit Desc..."
+                            id="desc"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button
+                          disabled={!title || mutation.isPending}
+                          onClick={() => {
+                            /**
+                             * Update the selected video
+                             */
+                            mutation.mutate(
+                              {
+                                id: selectedVideo.id,
+                                snippet: {
+                                  ...selectedVideo.snippet,
+                                  title,
+                                  description: desc,
+                                },
+                              },
+                              {
+                                onSuccess: () => {
+                                  toast({
+                                    description: "Successfully edited",
+                                  });
+                                },
+                                onError: (e) => {
+                                  console.log(e);
+                                  toast({
+                                    variant: "destructive",
+                                    description:
+                                      "Something went wrong! Try again later",
+                                  });
+                                },
+                              }
+                            );
+                          }}
+                        >
+                          Confirm
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </Card>
+              </li>
+            ))
+          )}
+        </ul>
+        {videosError || videos?.error ? null : (
+          <Button
+            disabled={isVideosPending || videos.items.length < loadedVideoCount}
+            onClick={() => setLoadedVideoCount((c) => (c += 10))}
+            variant="secondary"
+            className="mt-4 font-semibold"
+          >
+            Load 10 more videos
+          </Button>
+        )}
+      </section>
     </main>
   );
 }
